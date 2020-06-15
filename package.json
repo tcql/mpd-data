@@ -9,7 +9,10 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "d3-dsv": "^1.2.0",
-    "lodash": "^4.17.15"
+    "@turf/turf": "^5.1.6",
+    "csv-parse": "^4.10.1",
+    "glob": "^7.1.6",
+    "lodash": "^4.17.15",
+    "ora": "^4.0.4"
   }
 }
