@@ -11,8 +11,10 @@
   "dependencies": {
     "@turf/turf": "^5.1.6",
     "csv-parse": "^4.10.1",
+    "csv-stringify": "^5.5.0",
     "glob": "^7.1.6",
     "lodash": "^4.17.15",
-    "ora": "^4.0.4"
+    "ora": "^4.0.4",
+    "through2": "^3.0.1"
   }
 }

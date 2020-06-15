@@ -9,11 +9,14 @@ const turf = require('@turf/turf')
 const ora = require('ora')
 const util = require('util')
 const csvParse = require('csv-parse')
+const csvStringify = require('csv-stringify')
+const through2 = require('through2')
 const readFile = util.promisify(fs.readFile)
 
 // Suppress ExperimentalWarning coming from csv-parse
 const {emitWarning} = process
 process.emitWarning = (warning, arg0, ...args) => {
+  console.log(warning, arg0)
   let type = arg0.type || arg0
   if (arg0 && type && type === 'ExperimentalWarning') return false
   return emitWarning(warning, arg0, ...args)
@@ -36,29 +39,51 @@ async function mergeClean(files){
   for await (let f of files) {
     let fileData = []
     const spinner = ora({ text: `Processing ${f}`, spinner: 'dots3' }).start()
-    let parser = fs.createReadStream(path.resolve(f), 'utf-8')
-      .pipe(csvParse({cast: true, columns: true}))
-
-    for await (const record of parser) {
-      let r = await cleanup(record)
-      fileData.push(r)
-    }
-    let outName = f.replace('raw', 'processed').replace('.csv', '.json')
-    fs.writeFileSync(outName, JSON.stringify(fileData))
-    allData = allData.concat(fileData)
+    await transformFile(f)
     spinner.succeed()
   }
   return allData
 }
 
-function rename(obj, mappings) {
-  return _.mapKeys(obj, (v, k) => mappings[k] ? mappings[k] : k)
+async function transformFile(file) {
+  const outName = file.replace('raw', 'processed')
+  const columns = [
+    "type",
+    "year",
+    "date",
+    "hour",
+    "age",
+    "defendant_psa",
+    "defendant_district",
+    "defendant_race",
+    "defendant_ethnicity",
+    "defendant_sex",
+    "category",
+    "charge",
+    "arrest_psa",
+    "arrest_district",
+    "offense_psa",
+    "offense_district",
+    "arrest_lat",
+    "arrest_long",
+    "offense_lat",
+    "offense_long",
+    "arrest_ward",
+  ]
+  return new Promise((resolve, reject) => {
+    fs.createReadStream(path.resolve(file), 'utf-8')
+      .pipe(csvParse({cast: true, columns: true}))
+      .pipe(through2.obj(cleanup2))
+      .pipe(csvStringify({header: true, columns: columns}))
+      .pipe(fs.createWriteStream(outName))
+      .on('close', () => {
+        resolve()
+      })
+  })
+  .catch(e => console.error(e))
 }
 
-// Slightly akward async/promise resolution; If we did this
-// synchronously, we'd block the pretty spinners from updating,
-// so this is just for CLI aesthetics 😅
-async function cleanup(row) {
+function cleanup(row, enc, next) {
   const dropCols = [
     "ccn",
     "arrest_number",
@@ -72,12 +97,9 @@ async function cleanup(row) {
     "offense_block_geoy",
   ]
   const mappings = {
-    "arrestee_type" : "type",
     "arrest_year": "year",
     "arrest_date": "date",
     "arrest_hour": "hour",
-    "arrest_category": "category",
-    "charge_description": "charge",
     "arrest_location_psa": "arrest_psa",
     "arrest_location_district": "arrest_district",
     "arrest_latitude": "arrest_lat",
@@ -92,18 +114,12 @@ async function cleanup(row) {
     .assign({arrest_ward: findWard(row["Arrest Longitude"], row["Arrest Latitude"])})
     .omit(dropCols)
     .value()
-
-  return Promise.resolve(cleaned)
+  next(null, cleaned)
 }
 
 async function main() {
   const files = glob.sync('data/raw/**/Arrests*.csv')
-  const arrests = await mergeClean(files)
-
-  // output will be one large array of all arrests, which are tagged by year
-  // if we want to sort them out again. they'll also have the arrest_ward added
-  // so we can generate aggregates of where arrests occur
-  fs.writeFileSync(path.resolve('data/processed/ArrestsAllYears.json'), JSON.stringify(arrests, null, 2))
+  await mergeClean(files)
 }
 
 main()
